@@ -1,0 +1,10 @@
+requests
+praw
+python-dotenv
+anthropic
+openai
+google-genai
+groq
+beautifulsoup4
+feedparser
+flask

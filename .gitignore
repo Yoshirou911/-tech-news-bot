@@ -1,0 +1,6 @@
+.env
+__pycache__/
+*.pyc
+data/sent_history.json
+logs/*.log
+.claude/settings.local.json
