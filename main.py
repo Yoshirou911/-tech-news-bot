@@ -69,11 +69,17 @@ def main() -> None:
             logging.exception(f"記事の処理に失敗しました: {article.get('url')}")
             continue
 
-    discord.send_digest(relevant_articles)
-    history.append_and_save(records, relevant_articles)
+    try:
+        discord.send_digest(relevant_articles)
+        print(f"{len(relevant_articles)}件をDiscordに通知しました")
+        logging.info(f"{len(relevant_articles)}件をDiscordに通知しました")
+    except Exception:
+        logging.exception("Discordへの通知に失敗しました")
+        print("[エラー] Discordへの通知に失敗しました（詳細はlogs/bot.logを確認してください）")
 
-    print(f"{len(relevant_articles)}件をDiscordに通知しました")
-    logging.info(f"{len(relevant_articles)}件をDiscordに通知しました")
+    # Discordへの通知が失敗しても、要約済みの記事は送信済みとして記録する。
+    # (記録しないと、次回実行時に同じ記事を再処理し続けてしまうため)
+    history.append_and_save(records, relevant_articles)
 
 
 if __name__ == "__main__":
