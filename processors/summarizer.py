@@ -207,6 +207,32 @@ def answer_question(question: str, articles: list[dict], web_results: list[dict]
     return None
 
 
+def generate_overview(articles: list[dict]) -> str | None:
+    """収集した記事全体を俯瞰し、傾向を日本語1〜2文でまとめる(ダイジェストの冒頭に使う)"""
+    if not articles:
+        return None
+
+    titles = "\n".join(f"- [{a.get('source', '')}] {a.get('title', '')}" for a in articles)
+    prompt = (
+        "以下は今回収集した技術ニュースのタイトル一覧です。全体を俯瞰して、"
+        "今回の傾向や注目トピックを日本語1〜2文で簡潔にまとめてください。"
+        "前置きや箇条書きは不要で、まとめの文章だけを出力してください。\n\n"
+        f"{titles}"
+    )
+
+    for name in config.AI_PROVIDER_PRIORITY:
+        call_fn, is_configured = _TEXT_PROVIDERS[name]
+        if not is_configured():
+            continue
+
+        try:
+            return call_fn("あなたは技術ニュースの編集者です。", prompt).strip()
+        except Exception:
+            continue
+
+    return None
+
+
 def summarize_and_filter(article: dict) -> dict | None:
     """AI/ハードウェア関連の「ヤバい情報」かどうか判定し、該当する場合のみ要約を返す"""
     last_error = None

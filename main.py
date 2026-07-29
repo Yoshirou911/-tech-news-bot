@@ -3,7 +3,9 @@ import logging
 import sys
 from pathlib import Path
 
+import analytics
 import history
+import mute
 import status
 from collectors import arxiv, cve, github_trending, hackernews, huggingface, lobsters, qiita, reddit, rss
 from notifiers import discord
@@ -78,6 +80,16 @@ def main() -> None:
     if skipped:
         print(f"{skipped}件は送信済みのためスキップします")
 
+    new_articles, muted_count = mute.filter_muted(new_articles)
+    if muted_count:
+        print(f"{muted_count}件はミュート設定によりスキップします")
+
+    before_dedupe = len(new_articles)
+    new_articles = analytics.dedupe_similar_titles(new_articles)
+    duplicate_count = before_dedupe - len(new_articles)
+    if duplicate_count:
+        print(f"{duplicate_count}件は他ソースとの重複記事のためスキップします")
+
     relevant_articles = []
     for article in new_articles:
         try:
@@ -89,10 +101,16 @@ def main() -> None:
             logging.exception(f"記事の処理に失敗しました: {article.get('url')}")
             continue
 
+    overview = None
+    try:
+        overview = summarizer.generate_overview(relevant_articles)
+    except Exception:
+        logging.exception("まとめ文の生成に失敗しました")
+
     discord_ok = True
     discord_error = None
     try:
-        discord.send_digest(relevant_articles)
+        discord.send_digest(relevant_articles, overview=overview)
         print(f"{len(relevant_articles)}件をDiscordに通知しました")
         logging.info(f"{len(relevant_articles)}件をDiscordに通知しました")
     except Exception as e:

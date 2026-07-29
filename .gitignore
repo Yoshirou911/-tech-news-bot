@@ -3,5 +3,6 @@ __pycache__/
 *.pyc
 data/sent_history.json
 data/status.json
+data/muted_keywords.json
 logs/*.log
 .claude/settings.local.json

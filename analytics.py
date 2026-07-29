@@ -1,7 +1,8 @@
-"""記事タイトルからトレンドキーワードを抽出するモジュール"""
+"""記事タイトルからトレンドキーワードを抽出したり、似たタイトルの重複を検出するモジュール"""
 import re
 import sys
 from collections import Counter
+from difflib import SequenceMatcher
 
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -28,6 +29,31 @@ def extract_keywords(titles: list[str], top_n: int = 25) -> list[tuple[str, int]
             counter[word] += 1
 
     return counter.most_common(top_n)
+
+
+def _normalize_title(title: str) -> str:
+    return re.sub(r"[^\w\s]", "", title.lower()).strip()
+
+
+def dedupe_similar_titles(articles: list[dict], threshold: float = 0.85) -> list[dict]:
+    """タイトルが似ている記事(同じ話題が複数ソースに載っているもの)をまとめ、最初の1件だけ残す"""
+    kept: list[dict] = []
+    kept_normalized: list[str] = []
+
+    for article in articles:
+        normalized = _normalize_title(article.get("title", ""))
+
+        is_duplicate = any(
+            SequenceMatcher(None, normalized, existing).ratio() >= threshold
+            for existing in kept_normalized
+        )
+        if is_duplicate:
+            continue
+
+        kept.append(article)
+        kept_normalized.append(normalized)
+
+    return kept
 
 
 if __name__ == "__main__":

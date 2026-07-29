@@ -7,6 +7,7 @@ from flask import Flask, jsonify, render_template_string, request
 
 import analytics
 import history
+import mute
 import status as status_module
 from collectors import arxiv, github_trending, hackernews, qiita, websearch
 from processors import summarizer
@@ -30,48 +31,54 @@ BASE_STYLE = """
   * { box-sizing: border-box; }
   body {
     font-family: 'Consolas', 'Courier New', monospace;
-    max-width: 900px; margin: 2rem auto; padding: 0 1rem 4rem;
-    background: #0a0f0a; color: #33ff66;
-    text-shadow: 0 0 4px rgba(51,255,102,0.35);
+    max-width: 760px; margin: 2rem auto; padding: 0 1.2rem 4rem;
+    background: #0a0f0a; color: #cdeeda;
+    line-height: 1.7; font-size: 16px;
   }
-  h1 { font-size: 1.4rem; letter-spacing: 2px; text-transform: uppercase; border-bottom: 1px solid #33ff66; padding-bottom: 0.6rem; }
+  h1 {
+    font-size: 1.3rem; letter-spacing: 1px; text-transform: uppercase; color: #33ff66;
+    text-shadow: 0 0 6px rgba(51,255,102,0.5);
+    border-bottom: 1px solid #1c8f3a; padding-bottom: 0.6rem; margin-bottom: 1.2rem;
+  }
   h1::before { content: "root@technews:~$ "; color: #1c8f3a; }
   h1::after { content: "_"; animation: blink 1s step-start infinite; }
-  nav { margin-bottom: 1.5rem; padding: 0.6rem 1rem; border: 1px solid #1c8f3a; background: rgba(51,255,102,0.05); }
-  nav a { margin-right: 1rem; color: #33ff66; text-decoration: none; }
-  nav a:hover { background: #33ff66; color: #0a0f0a; text-shadow: none; padding: 0 2px; }
-  form { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+  nav { margin-bottom: 1.5rem; padding: 0.7rem 1rem; border: 1px solid #1c8f3a; background: rgba(51,255,102,0.05); line-height: 2; }
+  nav a { margin-right: 1rem; color: #33ff66; text-decoration: none; font-weight: bold; }
+  nav a:hover { background: #33ff66; color: #0a0f0a; padding: 2px 4px; border-radius: 3px; }
+  form { display: flex; gap: 0.5rem; margin-bottom: 1.2rem; }
   input[type=text] {
-    flex: 1; padding: 0.6rem; font-size: 1rem; font-family: inherit;
-    background: #000; color: #33ff66; border: 1px solid #1c8f3a;
+    flex: 1; padding: 0.7rem; font-size: 1rem; font-family: inherit;
+    background: #000; color: #33ff66; border: 1px solid #1c8f3a; border-radius: 3px;
   }
-  input[type=text]::placeholder { color: #1c8f3a; }
-  input[type=text]:focus { outline: none; border-color: #33ff66; box-shadow: 0 0 6px rgba(51,255,102,0.6); }
+  input[type=text]::placeholder { color: #4a7a58; }
+  input[type=text]:focus { outline: none; border-color: #33ff66; box-shadow: 0 0 6px rgba(51,255,102,0.5); }
   button {
-    padding: 0.6rem 1.2rem; font-size: 1rem; font-family: inherit; font-weight: bold; cursor: pointer;
-    background: #33ff66; color: #0a0f0a; border: none;
+    padding: 0.7rem 1.3rem; font-size: 1rem; font-family: inherit; font-weight: bold; cursor: pointer;
+    background: #33ff66; color: #0a0f0a; border: none; border-radius: 3px;
   }
   button:hover { background: #6fffa0; }
-  .count { color: #1c8f3a; margin-bottom: 1rem; }
-  .note { color: #1c8f3a; font-size: 0.85rem; }
-  .article { border-bottom: 1px dashed #1c8f3a; padding: 1rem 0; }
+  .count { color: #8fcaa0; margin-bottom: 1.2rem; font-size: 0.9rem; }
+  .note { color: #8fcaa0; font-size: 0.85rem; line-height: 1.6; margin-bottom: 1rem; }
+  .article { border-bottom: 1px solid #17301f; padding: 1.1rem 0; }
   .article::before { content: "> "; color: #1c8f3a; }
-  .meta { color: #1c8f3a; font-size: 0.8rem; }
-  .summary { white-space: pre-line; margin: 0.4rem 0; color: #a8ffc0; }
+  .meta { color: #6fae7f; font-size: 0.78rem; margin-bottom: 0.3rem; letter-spacing: 0.3px; }
+  .article strong a { color: #5fffa0; font-size: 1.02rem; text-decoration: none; }
+  .article strong a:hover { text-decoration: underline; }
+  .summary { white-space: pre-line; margin-top: 0.5rem; color: #d4ffe0; font-size: 0.94rem; }
   a { color: #33ff66; }
-  a:hover { text-shadow: 0 0 8px #33ff66; }
-  .bar-row { display: flex; align-items: center; margin: 0.4rem 0; gap: 0.6rem; }
-  .bar-label { width: 140px; flex-shrink: 0; text-align: right; font-size: 0.9rem; }
-  .bar-track { flex: 1; background: #000; border: 1px solid #1c8f3a; }
-  .bar-fill { background: #33ff66; color: #0a0f0a; font-weight: bold; font-size: 0.8rem; padding: 2px 6px; white-space: nowrap; }
+  a:hover { color: #6fffa0; }
+  .bar-row { display: flex; align-items: center; margin: 0.5rem 0; gap: 0.7rem; }
+  .bar-label { width: 150px; flex-shrink: 0; text-align: right; font-size: 0.88rem; color: #a8e0ba; }
+  .bar-track { flex: 1; background: #000; border: 1px solid #1c8f3a; border-radius: 2px; }
+  .bar-fill { background: #33ff66; color: #0a0f0a; font-weight: bold; font-size: 0.8rem; padding: 3px 6px; white-space: nowrap; }
   ::selection { background: #33ff66; color: #0a0f0a; }
   .status-ok { color: #33ff66; }
-  .status-error { color: #ff5555; text-shadow: 0 0 4px rgba(255,85,85,0.4); }
+  .status-error { color: #ff6b6b; }
   .status-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-  .status-table th, .status-table td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px dashed #1c8f3a; }
-  .status-badge { display: inline-block; padding: 0.2rem 0.7rem; border-radius: 4px; font-weight: bold; }
+  .status-table th, .status-table td { text-align: left; padding: 0.5rem 0.7rem; border-bottom: 1px solid #17301f; }
+  .status-badge { display: inline-block; padding: 0.25rem 0.8rem; border-radius: 4px; font-weight: bold; font-size: 0.85rem; }
   .status-badge.ok { background: #143d1e; color: #33ff66; border: 1px solid #33ff66; }
-  .status-badge.error { background: #3d1414; color: #ff5555; border: 1px solid #ff5555; }
+  .status-badge.error { background: #3d1414; color: #ff6b6b; border: 1px solid #ff6b6b; }
 """
 
 INDEX_TEMPLATE = """
@@ -308,6 +315,18 @@ TERMINAL_TEMPLATE = """
       <div class="cmd-name">hotspots</div>
       <div class="cmd-desc">GitHub Trending開発者の所在地ランキングを表示</div>
     </div>
+    <div class="cmd-item" onclick="insertCommand('mute ')">
+      <div class="cmd-name">mute &lt;キーワード&gt;</div>
+      <div class="cmd-desc">指定キーワードを含む記事を通知から除外</div>
+    </div>
+    <div class="cmd-item" onclick="insertCommand('unmute ')">
+      <div class="cmd-name">unmute &lt;キーワード&gt;</div>
+      <div class="cmd-desc">ミュートを解除</div>
+    </div>
+    <div class="cmd-item" onclick="runCommand('muted')">
+      <div class="cmd-name">muted</div>
+      <div class="cmd-desc">ミュート中のキーワード一覧を表示</div>
+    </div>
     <div class="cmd-item" onclick="runCommand('clear')">
       <div class="cmd-name">clear</div>
       <div class="cmd-desc">画面をクリア</div>
@@ -394,6 +413,9 @@ HELP_TEXT = (
     "&nbsp;&nbsp;ask &lt;質問&gt; - 収集済み記事とWeb検索結果を根拠にAIへ質問 (例: ask 最近のLLM動向は?)<br>"
     "&nbsp;&nbsp;trends - 頻出キーワードランキングを表示<br>"
     "&nbsp;&nbsp;hotspots - GitHub Trending開発者の所在地ランキングを表示<br>"
+    "&nbsp;&nbsp;mute &lt;キーワード&gt; - 指定キーワードを含む記事を今後の通知から除外<br>"
+    "&nbsp;&nbsp;unmute &lt;キーワード&gt; - ミュートを解除<br>"
+    "&nbsp;&nbsp;muted - 現在ミュート中のキーワード一覧を表示<br>"
     "&nbsp;&nbsp;clear - 画面をクリア<br>"
     "&nbsp;&nbsp;help - このヘルプを表示"
 )
@@ -511,6 +533,27 @@ def api_command():
             output = "<br>".join(lines)
         else:
             output = "所在地情報を取得できませんでした。"
+
+    elif cmd == "mute":
+        if not arg:
+            output = "使い方: mute &lt;キーワード&gt;"
+        else:
+            keywords = mute.add_muted_keyword(arg)
+            output = f"「{html_lib.escape(arg)}」をミュートしました。(現在{len(keywords)}件)"
+
+    elif cmd == "unmute":
+        if not arg:
+            output = "使い方: unmute &lt;キーワード&gt;"
+        else:
+            keywords = mute.remove_muted_keyword(arg)
+            output = f"「{html_lib.escape(arg)}」のミュートを解除しました。(現在{len(keywords)}件)"
+
+    elif cmd == "muted":
+        keywords = mute.load_muted_keywords()
+        if keywords:
+            output = "<br>".join(html_lib.escape(k) for k in keywords)
+        else:
+            output = "ミュート中のキーワードはありません。"
 
     else:
         output = f'command not found: {html_lib.escape(cmd)} ("help"で使い方を確認できます)'

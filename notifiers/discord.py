@@ -113,7 +113,7 @@ def _chunk_embeds_into_messages(embeds: list[dict]) -> list[list[dict]]:
     return chunks
 
 
-def send_digest(articles: list[dict]) -> None:
+def send_digest(articles: list[dict], overview: str | None = None) -> None:
     if not articles:
         return
 
@@ -125,10 +125,14 @@ def send_digest(articles: list[dict]) -> None:
     for source, items in grouped.items():
         embeds += _build_embeds_for_source(source, items)
 
+    header = f"📰 新着 {len(articles)}件のAI/技術ニュース"
+    if overview:
+        header += f"\n{overview}"
+
     for i, chunk in enumerate(_chunk_embeds_into_messages(embeds)):
         payload = {"embeds": chunk}
         if i == 0:
-            payload["content"] = f"📰 新着 {len(articles)}件のAI/技術ニュース"
+            payload["content"] = header[:2000]
 
         response = requests.post(
             config.DISCORD_WEBHOOK_URL,
