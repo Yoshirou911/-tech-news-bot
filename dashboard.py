@@ -1,12 +1,14 @@
 """過去に送信した記事の一覧・検索、トピック検索、トレンド可視化を提供するローカルWebダッシュボード"""
 import html as html_lib
 from collections import Counter
+from datetime import datetime, timezone
 
 from flask import Flask, jsonify, render_template_string, request
 
 import analytics
 import history
-from collectors import arxiv, github_trending, hackernews, websearch
+import status as status_module
+from collectors import arxiv, github_trending, hackernews, qiita, websearch
 from processors import summarizer
 
 app = Flask(__name__)
@@ -18,7 +20,8 @@ NAV = (
     '<a href="/topic">気になる分野を調べる</a> | '
     '<a href="/trends">トレンドキーワード</a> | '
     '<a href="/hotspots">開発者の所在地</a> | '
-    '<a href="/ask">まとめて質問する</a>'
+    '<a href="/ask">まとめて質問する</a> | '
+    '<a href="/status">ステータス</a>'
     '</nav>'
 )
 
@@ -62,6 +65,13 @@ BASE_STYLE = """
   .bar-track { flex: 1; background: #000; border: 1px solid #1c8f3a; }
   .bar-fill { background: #33ff66; color: #0a0f0a; font-weight: bold; font-size: 0.8rem; padding: 2px 6px; white-space: nowrap; }
   ::selection { background: #33ff66; color: #0a0f0a; }
+  .status-ok { color: #33ff66; }
+  .status-error { color: #ff5555; text-shadow: 0 0 4px rgba(255,85,85,0.4); }
+  .status-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+  .status-table th, .status-table td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px dashed #1c8f3a; }
+  .status-badge { display: inline-block; padding: 0.2rem 0.7rem; border-radius: 4px; font-weight: bold; }
+  .status-badge.ok { background: #143d1e; color: #33ff66; border: 1px solid #33ff66; }
+  .status-badge.error { background: #3d1414; color: #ff5555; border: 1px solid #ff5555; }
 """
 
 INDEX_TEMPLATE = """
@@ -101,7 +111,7 @@ TOPIC_TEMPLATE = """
     <button type="submit">調べる</button>
   </form>
   {% if topic %}
-    <p class="count">「{{ topic }}」でHackerNews / arXivをリアルタイム検索し、AIが日本語要約しました({{ articles|length }}件)</p>
+    <p class="count">「{{ topic }}」でHackerNews / arXiv / Qiitaをリアルタイム検索し、AIが日本語要約しました({{ articles|length }}件)</p>
   {% endif %}
   {% for a in articles %}
   <div class="article">
@@ -185,6 +195,46 @@ ASK_TEMPLATE = """
 </html>
 """
 
+STATUS_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta charset="utf-8"><title>ステータス - 技術ニュースBot</title><style>{{ style }}</style></head>
+<body>
+  <h1>実行ステータス</h1>
+  {{ nav | safe }}
+  {% if not run %}
+  <p>まだ実行記録がありません。main.pyを一度実行してください。</p>
+  {% else %}
+  <p class="count">
+    最終実行: {{ run.last_run_at_local }}（{{ run.relative_time }}）
+    <span class="status-badge {{ 'ok' if run.overall_ok else 'error' }}">{{ '正常' if run.overall_ok else '異常あり' }}</span>
+  </p>
+  <p class="note">
+    収集 {{ run.collected_count }}件 / 送信済みスキップ {{ run.skipped_count }}件 / Discord通知 {{ run.sent_count }}件
+  </p>
+
+  <h2 style="font-size:1rem; border-bottom:1px solid #1c8f3a; padding-bottom:0.4rem;">Discord通知</h2>
+  {% if run.discord_ok %}
+  <p class="status-ok">✓ 正常に送信されました</p>
+  {% else %}
+  <p class="status-error">✗ 送信に失敗しました: {{ run.discord_error }}</p>
+  {% endif %}
+
+  <h2 style="font-size:1rem; border-bottom:1px solid #1c8f3a; padding-bottom:0.4rem; margin-top:1.5rem;">情報源ごとの収集結果</h2>
+  <table class="status-table">
+    <tr><th>ソース</th><th>結果</th></tr>
+    {% for name, result in run.source_results.items() %}
+    <tr>
+      <td>{{ name }}</td>
+      <td class="{{ 'status-ok' if result.startswith('ok') else 'status-error' }}">{{ result }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</body>
+</html>
+"""
+
 
 TERMINAL_TEMPLATE = """
 <!DOCTYPE html>
@@ -244,7 +294,7 @@ TERMINAL_TEMPLATE = """
     </div>
     <div class="cmd-item" onclick="insertCommand('search ')">
       <div class="cmd-name">search &lt;キーワード&gt;</div>
-      <div class="cmd-desc">HackerNews / arXivをリアルタイム検索</div>
+      <div class="cmd-desc">HackerNews / arXiv / Qiitaをリアルタイム検索</div>
     </div>
     <div class="cmd-item" onclick="insertCommand('ask ')">
       <div class="cmd-name">ask &lt;質問&gt;</div>
@@ -340,7 +390,7 @@ input.focus();
 HELP_TEXT = (
     "使えるコマンド一覧:<br>"
     "&nbsp;&nbsp;list [件数] - 収集済み記事の一覧を表示 (例: list 5)<br>"
-    "&nbsp;&nbsp;search &lt;キーワード&gt; - HackerNews / arXivをリアルタイム検索 (例: search 量子コンピュータ)<br>"
+    "&nbsp;&nbsp;search &lt;キーワード&gt; - HackerNews / arXiv / Qiitaをリアルタイム検索 (例: search 量子コンピュータ)<br>"
     "&nbsp;&nbsp;ask &lt;質問&gt; - 収集済み記事とWeb検索結果を根拠にAIへ質問 (例: ask 最近のLLM動向は?)<br>"
     "&nbsp;&nbsp;trends - 頻出キーワードランキングを表示<br>"
     "&nbsp;&nbsp;hotspots - GitHub Trending開発者の所在地ランキングを表示<br>"
@@ -401,6 +451,10 @@ def api_command():
                 pass
             try:
                 raw_articles += arxiv.search_papers(arg, limit=5)
+            except Exception:
+                pass
+            try:
+                raw_articles += qiita.search_articles(arg, limit=5)
             except Exception:
                 pass
 
@@ -500,6 +554,10 @@ def topic_search():
             raw_articles += arxiv.search_papers(topic, limit=5)
         except Exception:
             pass
+        try:
+            raw_articles += qiita.search_articles(topic, limit=5)
+        except Exception:
+            pass
 
         for article in raw_articles:
             result = summarizer.summarize_topic(article)
@@ -558,6 +616,34 @@ def ask():
     return render_template_string(
         ASK_TEMPLATE, question=question, answer=answer, total=len(records), style=BASE_STYLE, nav=NAV
     )
+
+
+def _relative_time_ja(dt: datetime) -> str:
+    delta = datetime.now(timezone.utc) - dt
+    seconds = delta.total_seconds()
+
+    if seconds < 60:
+        return "たった今"
+    if seconds < 3600:
+        return f"{int(seconds // 60)}分前"
+    if seconds < 86400:
+        return f"{int(seconds // 3600)}時間前"
+    return f"{int(seconds // 86400)}日前"
+
+
+@app.route("/status")
+def status_page():
+    run = status_module.load_status()
+
+    if run:
+        last_run_dt = datetime.fromisoformat(run["last_run_at"])
+        run["last_run_at_local"] = last_run_dt.strftime("%Y-%m-%d %H:%M:%S")
+        run["relative_time"] = _relative_time_ja(last_run_dt)
+        run["overall_ok"] = run["discord_ok"] and all(
+            v.startswith("ok") for v in run["source_results"].values()
+        )
+
+    return render_template_string(STATUS_TEMPLATE, run=run, style=BASE_STYLE, nav=NAV)
 
 
 if __name__ == "__main__":

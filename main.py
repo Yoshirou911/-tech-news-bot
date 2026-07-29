@@ -4,7 +4,8 @@ import sys
 from pathlib import Path
 
 import history
-from collectors import arxiv, github_trending, hackernews, huggingface, lobsters, reddit
+import status
+from collectors import arxiv, github_trending, hackernews, huggingface, lobsters, qiita, reddit, rss
 from notifiers import discord
 from processors import summarizer
 
@@ -29,27 +30,34 @@ COLLECTORS = [
     ("arXiv", lambda: arxiv.get_latest_papers(limit=10)),
     ("Lobsters", lambda: lobsters.get_hot_stories(limit=10)),
     ("HuggingFace", lambda: huggingface.get_trending_models(limit=10)),
+    ("Qiita", lambda: qiita.get_popular_articles(limit=10)),
+    ("Zenn", lambda: rss.get_latest_from_feed("https://zenn.dev/feed", "Zenn", limit=10)),
+    ("TechCrunch", lambda: rss.get_latest_from_feed("https://techcrunch.com/feed/", "TechCrunch", limit=10)),
 ]
 
 
-def collect_all_articles() -> list[dict]:
+def collect_all_articles() -> tuple[list[dict], dict[str, str]]:
     articles = []
+    source_results = {}
 
     for name, collect_fn in COLLECTORS:
         try:
-            articles += collect_fn()
-        except Exception:
+            result = collect_fn()
+            articles += result
+            source_results[name] = f"ok ({len(result)}件)"
+        except Exception as e:
             logging.exception(f"{name}の収集に失敗しました")
             print(f"[警告] {name}の収集に失敗しました（スキップします）")
+            source_results[name] = f"error: {e}"
 
-    return articles
+    return articles, source_results
 
 
 def main() -> None:
     records = history.load_history()
     sent_urls = history.get_sent_urls(records)
 
-    articles = collect_all_articles()
+    articles, source_results = collect_all_articles()
     print(f"{len(articles)}件の記事を収集しました")
     logging.info(f"{len(articles)}件の記事を収集しました")
 
@@ -69,17 +77,30 @@ def main() -> None:
             logging.exception(f"記事の処理に失敗しました: {article.get('url')}")
             continue
 
+    discord_ok = True
+    discord_error = None
     try:
         discord.send_digest(relevant_articles)
         print(f"{len(relevant_articles)}件をDiscordに通知しました")
         logging.info(f"{len(relevant_articles)}件をDiscordに通知しました")
-    except Exception:
+    except Exception as e:
         logging.exception("Discordへの通知に失敗しました")
         print("[エラー] Discordへの通知に失敗しました（詳細はlogs/bot.logを確認してください）")
+        discord_ok = False
+        discord_error = str(e)
 
     # Discordへの通知が失敗しても、要約済みの記事は送信済みとして記録する。
     # (記録しないと、次回実行時に同じ記事を再処理し続けてしまうため)
     history.append_and_save(records, relevant_articles)
+
+    status.save_run_status(
+        collected_count=len(articles),
+        skipped_count=skipped,
+        sent_count=len(relevant_articles),
+        source_results=source_results,
+        discord_ok=discord_ok,
+        discord_error=discord_error,
+    )
 
 
 if __name__ == "__main__":

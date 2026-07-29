@@ -15,6 +15,9 @@ SOURCE_COLORS = {
     "arXiv": 0xB31B1B,
     "Lobsters": 0xA43225,
     "HuggingFace": 0xFFD21E,
+    "Qiita": 0x55C500,
+    "Zenn": 0x3EA8FF,
+    "TechCrunch": 0x0ABF53,
 }
 DEFAULT_COLOR = 0x5865F2
 

@@ -9,6 +9,15 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
 
 
+def _is_configured() -> bool:
+    values = [config.REDDIT_CLIENT_ID, config.REDDIT_CLIENT_SECRET, config.REDDIT_USER_AGENT]
+    if not all(values):
+        return False
+    # .envがプレースホルダー(日本語テキストなど)のままだと、HTTPヘッダーへの
+    # エンコードに失敗し分かりにくいエラーになるため、ここで先に弾く。
+    return all(v.isascii() for v in values)
+
+
 def get_reddit_client() -> praw.Reddit:
     reddit = praw.Reddit(
         client_id=config.REDDIT_CLIENT_ID,
@@ -40,6 +49,9 @@ def get_top_posts(subreddit_name: str, limit: int = 5, time_filter: str = "day")
 
 
 def get_all_subreddit_posts(limit_per_sub: int = 5, time_filter: str = "day") -> list[dict]:
+    if not _is_configured():
+        raise RuntimeError("Reddit APIキーが未設定、またはプレースホルダーのままです(.envを確認してください)")
+
     all_posts = []
     for subreddit_name in config.SUBREDDITS:
         all_posts.extend(get_top_posts(subreddit_name, limit=limit_per_sub, time_filter=time_filter))
