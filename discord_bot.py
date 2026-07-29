@@ -9,6 +9,7 @@ from discord.ext import commands
 import analytics
 import config
 import history
+import mute
 import status as status_module
 from collectors import arxiv, github_trending, hackernews, qiita, websearch
 from processors import summarizer
@@ -161,6 +162,29 @@ async def status_command(interaction: discord.Interaction):
         lines.append(f"{icon} {name}: {result}")
 
     await interaction.followup.send("\n".join(lines)[:MESSAGE_LIMIT])
+
+
+@bot.tree.command(name="mute", description="指定キーワードを含む記事を今後の通知から除外")
+@app_commands.describe(keyword="ミュートするキーワード")
+async def mute_command(interaction: discord.Interaction, keyword: str):
+    keywords = mute.add_muted_keyword(keyword)
+    await interaction.response.send_message(f"「{keyword}」をミュートしました。(現在{len(keywords)}件)")
+
+
+@bot.tree.command(name="unmute", description="指定キーワードのミュートを解除")
+@app_commands.describe(keyword="ミュート解除するキーワード")
+async def unmute_command(interaction: discord.Interaction, keyword: str):
+    keywords = mute.remove_muted_keyword(keyword)
+    await interaction.response.send_message(f"「{keyword}」のミュートを解除しました。(現在{len(keywords)}件)")
+
+
+@bot.tree.command(name="muted", description="現在ミュート中のキーワード一覧を表示")
+async def muted_command(interaction: discord.Interaction):
+    keywords = mute.load_muted_keywords()
+    if keywords:
+        await interaction.response.send_message("\n".join(f"- {k}" for k in keywords))
+    else:
+        await interaction.response.send_message("ミュート中のキーワードはありません。")
 
 
 if __name__ == "__main__":
