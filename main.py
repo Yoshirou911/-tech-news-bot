@@ -5,9 +5,18 @@ from pathlib import Path
 
 import history
 import status
-from collectors import arxiv, github_trending, hackernews, huggingface, lobsters, qiita, reddit, rss
+from collectors import arxiv, cve, github_trending, hackernews, huggingface, lobsters, qiita, reddit, rss
 from notifiers import discord
 from processors import summarizer
+
+SECURITY_GITHUB_TOPICS = ["reverse-engineering", "game-hacking", "ctf"]
+
+
+def _collect_security_repos(limit_per_topic: int = 4) -> list[dict]:
+    repos = []
+    for topic in SECURITY_GITHUB_TOPICS:
+        repos += github_trending.search_by_topic(topic, limit=limit_per_topic)
+    return repos
 
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -33,6 +42,9 @@ COLLECTORS = [
     ("Qiita", lambda: qiita.get_popular_articles(limit=10)),
     ("Zenn", lambda: rss.get_latest_from_feed("https://zenn.dev/feed", "Zenn", limit=10)),
     ("TechCrunch", lambda: rss.get_latest_from_feed("https://techcrunch.com/feed/", "TechCrunch", limit=10)),
+    ("CVE", lambda: cve.get_recent_critical_cves(limit=10)),
+    ("TheHackerNews", lambda: rss.get_latest_from_feed("https://feeds.feedburner.com/TheHackersNews", "TheHackerNews", limit=10)),
+    ("SecurityRepos", lambda: _collect_security_repos(limit_per_topic=4)),
 ]
 
 

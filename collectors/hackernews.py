@@ -1,5 +1,7 @@
 """Hacker Newsのトップ記事を取得するモジュール"""
 import sys
+import time
+
 import requests
 
 if sys.platform == "win32":
@@ -7,6 +9,7 @@ if sys.platform == "win32":
 
 BASE_URL = "https://hacker-news.firebaseio.com/v0"
 ALGOLIA_SEARCH_URL = "https://hn.algolia.com/api/v1/search"
+ALGOLIA_SEARCH_BY_DATE_URL = "https://hn.algolia.com/api/v1/search_by_date"
 
 
 def get_top_story_ids(limit: int = 30) -> list[int]:
@@ -69,6 +72,36 @@ def search_stories(query: str, limit: int = 10) -> list[dict]:
         })
 
     return stories
+
+
+def search_recent(query: str, limit: int = 10, days: int = 3) -> list[dict]:
+    """直近N日以内に投稿されたHN記事をキーワード検索する(セキュリティ/リバースエンジニアリング等の専用収集に使用)"""
+    since = int(time.time()) - days * 86400
+
+    res = requests.get(
+        ALGOLIA_SEARCH_BY_DATE_URL,
+        params={
+            "query": query,
+            "tags": "story",
+            "numericFilters": f"created_at_i>{since}",
+            "hitsPerPage": limit,
+        },
+        timeout=10,
+    )
+    res.raise_for_status()
+
+    stories = []
+    for hit in res.json().get("hits", []):
+        url = hit.get("url") or f"https://news.ycombinator.com/item?id={hit['objectID']}"
+        stories.append({
+            "source": "HackerNews",
+            "title": hit.get("title") or hit.get("story_title") or "",
+            "url": url,
+            "score": hit.get("points", 0),
+            "discussion_url": f"https://news.ycombinator.com/item?id={hit['objectID']}",
+        })
+
+    return [s for s in stories if s["title"]]
 
 
 if __name__ == "__main__":

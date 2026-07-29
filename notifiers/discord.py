@@ -18,6 +18,8 @@ SOURCE_COLORS = {
     "Qiita": 0x55C500,
     "Zenn": 0x3EA8FF,
     "TechCrunch": 0x0ABF53,
+    "CVE": 0xD32F2F,
+    "TheHackerNews": 0x1A1A2E,
 }
 DEFAULT_COLOR = 0x5865F2
 

@@ -9,6 +9,7 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
 
 TRENDING_URL = "https://github.com/trending"
+SEARCH_URL = "https://api.github.com/search/repositories"
 HEADERS = {"User-Agent": "Mozilla/5.0 tech-news-bot/1.0"}
 
 
@@ -87,6 +88,33 @@ def get_owner_locations(repos: list[dict]) -> list[dict]:
             })
 
     return results
+
+
+def search_by_topic(topic: str, limit: int = 10, sort: str = "updated") -> list[dict]:
+    """GitHubの特定トピック(例: reverse-engineering, cheat-engine, ctf)のリポジトリを検索する"""
+    res = requests.get(
+        SEARCH_URL,
+        params={"q": f"topic:{topic}", "sort": sort, "order": "desc", "per_page": limit},
+        headers=HEADERS,
+        timeout=15,
+    )
+    res.raise_for_status()
+
+    repos = []
+    for item in res.json().get("items", []):
+        title = item["full_name"]
+        if item.get("description"):
+            title += f" - {item['description']}"
+
+        repos.append({
+            "source": "GitHubTrending",
+            "title": title,
+            "url": item["html_url"],
+            "score": item.get("stargazers_count", 0),
+            "discussion_url": item["html_url"],
+        })
+
+    return repos
 
 
 if __name__ == "__main__":
