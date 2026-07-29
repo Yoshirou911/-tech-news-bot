@@ -49,7 +49,14 @@ def _format_bars(items: list[tuple[str, int]], label_width: int = 18) -> str:
 
 @bot.event
 async def on_ready():
-    await bot.tree.sync()
+    if config.DISCORD_GUILD_ID:
+        # サーバー限定で登録すると、グローバル登録(反映に最大1時間)と違い即座に反映される
+        guild = discord.Object(id=int(config.DISCORD_GUILD_ID))
+        bot.tree.copy_global_to(guild=guild)
+        await bot.tree.sync(guild=guild)
+    else:
+        await bot.tree.sync()
+
     print(f"ログイン完了: {bot.user}")
 
 
