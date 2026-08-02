@@ -117,6 +117,33 @@ def search_by_topic(topic: str, limit: int = 10, sort: str = "updated") -> list[
     return repos
 
 
+def search_repos(query: str, limit: int = 10, sort: str = "stars") -> list[dict]:
+    """GitHubリポジトリを自由文で検索する(topic:の完全一致ではなく、名前・説明文からの検索)"""
+    res = requests.get(
+        SEARCH_URL,
+        params={"q": query, "sort": sort, "order": "desc", "per_page": limit},
+        headers=HEADERS,
+        timeout=15,
+    )
+    res.raise_for_status()
+
+    repos = []
+    for item in res.json().get("items", []):
+        title = item["full_name"]
+        if item.get("description"):
+            title += f" - {item['description']}"
+
+        repos.append({
+            "source": "GitHubTrending",
+            "title": title,
+            "url": item["html_url"],
+            "score": item.get("stargazers_count", 0),
+            "discussion_url": item["html_url"],
+        })
+
+    return repos
+
+
 if __name__ == "__main__":
     repos = get_trending_repos(limit=10)
     for i, repo in enumerate(repos, 1):

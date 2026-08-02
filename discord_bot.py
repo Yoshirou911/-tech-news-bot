@@ -10,8 +10,9 @@ import analytics
 import config
 import history
 import mute
+import smart_search
 import status as status_module
-from collectors import arxiv, github_trending, hackernews, qiita, websearch
+from collectors import github_trending, websearch
 from processors import summarizer
 
 if sys.platform == "win32":
@@ -72,33 +73,19 @@ async def list_command(interaction: discord.Interaction, count: int = 10):
     await interaction.followup.send(_format_articles(records[:count]))
 
 
-@bot.tree.command(name="search", description="HackerNews / arXiv / Qiitaをリアルタイム検索")
-@app_commands.describe(keyword="検索キーワード")
-async def search_command(interaction: discord.Interaction, keyword: str):
+@bot.tree.command(name="search", description="知りたいことを伝えると、AIがキーワードを汲み取って複数ソースを横断検索")
+@app_commands.describe(query="調べたいこと(自然文でもOK)")
+async def search_command(interaction: discord.Interaction, query: str):
     await interaction.response.defer()
 
-    raw_articles = []
-    for fetch in (
-        lambda: hackernews.search_stories(keyword, limit=3),
-        lambda: arxiv.search_papers(keyword, limit=3),
-        lambda: qiita.search_articles(keyword, limit=3),
-    ):
-        try:
-            raw_articles += fetch()
-        except Exception:
-            pass
-
-    results = []
-    for article in raw_articles:
-        result = summarizer.summarize_topic(article)
-        if result:
-            results.append(result)
+    keyword, results = smart_search.search_by_question(query)
 
     if results:
         records = history.load_history()
         history.append_and_save(records, results)
 
-    await interaction.followup.send(_format_articles(results))
+    header = f"(検索キーワード: {keyword})\n\n"
+    await interaction.followup.send((header + _format_articles(results))[:MESSAGE_LIMIT])
 
 
 @bot.tree.command(name="ask", description="収集済み記事とWeb検索を根拠にAIへ質問")

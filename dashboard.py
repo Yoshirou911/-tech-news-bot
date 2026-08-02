@@ -8,8 +8,9 @@ from flask import Flask, jsonify, render_template_string, request
 import analytics
 import history
 import mute
+import smart_search
 import status as status_module
-from collectors import arxiv, github_trending, hackernews, qiita, websearch
+from collectors import github_trending, websearch
 from processors import summarizer
 
 app = Flask(__name__)
@@ -114,11 +115,12 @@ TOPIC_TEMPLATE = """
   <h1>気になる分野を調べる</h1>
   {{ nav | safe }}
   <form method="get" action="/topic">
-    <input type="text" name="topic" placeholder="例: 量子コンピュータ、ロボット掃除機" value="{{ topic }}">
+    <input type="text" name="topic" placeholder="例: ゲームのチートについて知りたい" value="{{ topic }}">
     <button type="submit">調べる</button>
   </form>
   {% if topic %}
-    <p class="count">「{{ topic }}」でHackerNews / arXiv / Qiitaをリアルタイム検索し、AIが日本語要約しました({{ articles|length }}件)</p>
+    <p class="note">AIが抽出した検索キーワード: 「{{ keyword }}」</p>
+    <p class="count">HackerNews / arXiv / Qiita / GitHubをリアルタイム検索し、AIが日本語要約しました({{ articles|length }}件)</p>
   {% endif %}
   {% for a in articles %}
   <div class="article">
@@ -300,8 +302,8 @@ TERMINAL_TEMPLATE = """
       <div class="cmd-desc">収集済み記事の一覧を表示</div>
     </div>
     <div class="cmd-item" onclick="insertCommand('search ')">
-      <div class="cmd-name">search &lt;キーワード&gt;</div>
-      <div class="cmd-desc">HackerNews / arXiv / Qiitaをリアルタイム検索</div>
+      <div class="cmd-name">search &lt;知りたいこと&gt;</div>
+      <div class="cmd-desc">AIがキーワードを汲み取り、複数ソースを横断検索</div>
     </div>
     <div class="cmd-item" onclick="insertCommand('ask ')">
       <div class="cmd-name">ask &lt;質問&gt;</div>
@@ -409,7 +411,7 @@ input.focus();
 HELP_TEXT = (
     "使えるコマンド一覧:<br>"
     "&nbsp;&nbsp;list [件数] - 収集済み記事の一覧を表示 (例: list 5)<br>"
-    "&nbsp;&nbsp;search &lt;キーワード&gt; - HackerNews / arXiv / Qiitaをリアルタイム検索 (例: search 量子コンピュータ)<br>"
+    "&nbsp;&nbsp;search &lt;知りたいこと&gt; - AIがキーワードを汲み取り、HackerNews/arXiv/Qiita/GitHubを横断検索 (例: search ゲームのチートについて知りたい)<br>"
     "&nbsp;&nbsp;ask &lt;質問&gt; - 収集済み記事とWeb検索結果を根拠にAIへ質問 (例: ask 最近のLLM動向は?)<br>"
     "&nbsp;&nbsp;trends - 頻出キーワードランキングを表示<br>"
     "&nbsp;&nbsp;hotspots - GitHub Trending開発者の所在地ランキングを表示<br>"
@@ -464,33 +466,15 @@ def api_command():
 
     elif cmd in ("search", "find"):
         if not arg:
-            output = "使い方: search &lt;キーワード&gt;"
+            output = "使い方: search &lt;キーワードや知りたいこと&gt;"
         else:
-            raw_articles = []
-            try:
-                raw_articles += hackernews.search_stories(arg, limit=5)
-            except Exception:
-                pass
-            try:
-                raw_articles += arxiv.search_papers(arg, limit=5)
-            except Exception:
-                pass
-            try:
-                raw_articles += qiita.search_articles(arg, limit=5)
-            except Exception:
-                pass
-
-            results = []
-            for article in raw_articles:
-                r = summarizer.summarize_topic(article)
-                if r:
-                    results.append(r)
+            keyword, results = smart_search.search_by_question(arg)
 
             if results:
                 records = history.load_history()
                 history.append_and_save(records, results)
 
-            output = _render_article_lines(results)
+            output = f"(検索キーワード: {html_lib.escape(keyword)})<br><br>" + _render_article_lines(results)
 
     elif cmd == "ask":
         if not arg:
@@ -586,32 +570,18 @@ def index():
 def topic_search():
     topic = request.args.get("topic", "").strip()
     articles = []
+    keyword = None
 
     if topic:
-        raw_articles = []
-        try:
-            raw_articles += hackernews.search_stories(topic, limit=5)
-        except Exception:
-            pass
-        try:
-            raw_articles += arxiv.search_papers(topic, limit=5)
-        except Exception:
-            pass
-        try:
-            raw_articles += qiita.search_articles(topic, limit=5)
-        except Exception:
-            pass
-
-        for article in raw_articles:
-            result = summarizer.summarize_topic(article)
-            if result:
-                articles.append(result)
+        keyword, articles = smart_search.search_by_question(topic)
 
         if articles:
             records = history.load_history()
             history.append_and_save(records, articles)
 
-    return render_template_string(TOPIC_TEMPLATE, topic=topic, articles=articles, style=BASE_STYLE, nav=NAV)
+    return render_template_string(
+        TOPIC_TEMPLATE, topic=topic, keyword=keyword, articles=articles, style=BASE_STYLE, nav=NAV
+    )
 
 
 @app.route("/trends")

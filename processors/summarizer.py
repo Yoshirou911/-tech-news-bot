@@ -233,6 +233,30 @@ def generate_overview(articles: list[dict]) -> str | None:
     return None
 
 
+def extract_search_keyword(query: str) -> str:
+    """自然文の質問から、検索APIに適した簡潔なキーワードをAIに抽出させる"""
+    prompt = (
+        "以下はユーザーが技術ニュースを探すために入力した文章です。"
+        "検索エンジンに投げるのに適した、簡潔な検索キーワードを1つだけ出力してください。"
+        "固有名詞・技術用語はそのまま使い、説明や前置き、記号は付けないでください。"
+        "英語の方が検索でヒットしやすい場合は英語に翻訳してください。\n\n"
+        f"{query}"
+    )
+
+    for name in config.AI_PROVIDER_PRIORITY:
+        call_fn, is_configured = _TEXT_PROVIDERS[name]
+        if not is_configured():
+            continue
+
+        try:
+            keyword = call_fn("あなたは検索アシスタントです。", prompt).strip()
+            return keyword.strip('"').strip("「」").strip("'")
+        except Exception:
+            continue
+
+    return query
+
+
 def summarize_and_filter(article: dict) -> dict | None:
     """AI/ハードウェア関連の「ヤバい情報」かどうか判定し、該当する場合のみ要約を返す"""
     last_error = None
